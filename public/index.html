@@ -3,86 +3,150 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Garmin Steps</title>
+    <title>Garmin Step Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-sm bg-gray-800 p-8 rounded-2xl shadow-xl text-center">
-        <h1 class="text-2xl font-bold mb-6">Garmin Live Steps</h1>
-        
-        <div id="auth-box" class="space-y-4">
-            <input type="email" id="email" placeholder="Garmin Email" class="w-full p-3 rounded bg-gray-700 border-none">
-            <input type="password" id="password" placeholder="Password" class="w-full p-3 rounded bg-gray-700 border-none">
-            <button onclick="doLogin()" id="btn-login" class="w-full bg-blue-600 py-3 rounded-lg font-bold">Connect Account</button>
-            
-            <div id="mfa-box" class="hidden pt-4 border-t border-gray-700">
-                <p class="text-sm text-gray-400 mb-2">Check your email for a code</p>
-                <input type="text" id="mfa-code" placeholder="000000" class="w-full p-3 rounded bg-gray-700 text-center text-xl">
-                <button onclick="doMFA()" class="w-full mt-3 bg-green-600 py-2 rounded-lg">Verify MFA</button>
-            </div>
+<body class="bg-slate-900 text-white min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-slate-800 rounded-3xl p-8 shadow-2xl border border-slate-700">
+        <h1 class="text-3xl font-bold text-center mb-8">My <span class="text-blue-500">Steps</span></h1>
+
+        <!-- Step 1: Login Section -->
+        <div id="login-section" class="space-y-4">
+            <input type="email" id="email" placeholder="Garmin Email" class="w-full p-4 rounded-xl bg-slate-700 border-none outline-none focus:ring-2 focus:ring-blue-500">
+            <input type="password" id="password" placeholder="Password" class="w-full p-4 rounded-xl bg-slate-700 border-none outline-none focus:ring-2 focus:ring-blue-500">
+            <button onclick="handleLogin()" class="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold transition">Connect</button>
         </div>
 
-        <div id="stats-box" class="hidden space-y-4">
-            <div class="text-6xl font-black text-blue-400" id="step-display">0</div>
-            <p class="text-gray-400 uppercase text-xs tracking-widest">Steps Today</p>
-            <div class="bg-gray-700 p-3 rounded-xl text-sm">
-                Goal: <span id="goal-display">--</span>
+        <!-- Step 2: MFA Section -->
+        <div id="mfa-section" class="hidden space-y-4">
+            <p class="text-center text-slate-400 text-sm">Check your email for the code!</p>
+            
+            <!-- The Countdown Timer -->
+            <div class="bg-red-900/30 border border-red-500/50 rounded-xl p-3 text-center">
+                <p id="timer-display" class="text-red-400 font-bold text-lg">15s</p>
+                <p class="text-xs text-red-300">Enter code before session expires</p>
             </div>
-            <button onclick="getSteps()" class="text-blue-500 text-xs hover:underline">Refresh</button>
+
+            <input type="text" id="mfa-code" placeholder="6-Digit Code" class="w-full p-4 rounded-xl bg-slate-700 text-center text-2xl tracking-widest outline-none focus:ring-2 focus:ring-green-500">
+            <button onclick="handleMFA()" class="w-full bg-green-600 hover:bg-green-500 py-4 rounded-xl font-bold transition">Verify</button>
         </div>
-        
-        <p id="msg" class="mt-4 text-xs text-red-400"></p>
+
+        <!-- Step 3: Dashboard Section -->
+        <div id="dashboard-section" class="hidden text-center space-y-6 py-10">
+            <div id="step-count" class="text-7xl font-black text-blue-400">0</div>
+            <p class="text-slate-500 uppercase tracking-widest text-xs">Steps Today</p>
+            <button onclick="getSteps()" class="text-blue-500 text-sm hover:underline mt-4">↻ Refresh Data</button>
+        </div>
+
+        <p id="status-msg" class="mt-6 text-center text-sm text-yellow-400 font-medium"></p>
     </div>
 
     <script>
-        // Change this to your Vercel URL once deployed
-        const API = window.location.origin + '/api';
+        const API_BASE = window.location.origin + '/api';
+        
+        // We need to remember the email to send it with the MFA code
+        let userEmail = ""; 
+        let countdownInterval;
 
-        async function doLogin() {
-            const email = document.getElementById('email').value;
+        async function handleLogin() {
+            userEmail = document.getElementById('email').value;
             const password = document.getElementById('password').value;
-            document.getElementById('msg').innerText = "Logging in...";
+            
+            setStatus("Contacting Garmin...");
 
-            const res = await fetch(`${API}/login`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ email, password })
-            });
-            const data = await res.json();
-
-            if (data.status === 'mfa_required') {
-                document.getElementById('mfa-box').classList.remove('hidden');
-                document.getElementById('msg').innerText = "Enter MFA Code";
-            } else if (data.status === 'success') {
-                loadDashboard();
-            } else {
-                document.getElementById('msg').innerText = data.message;
+            try {
+                const response = await fetch(`${API_BASE}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: userEmail, password: password })
+                });
+                const data = await response.json();
+                
+                if (data.status === 'mfa_required') {
+                    document.getElementById('login-section').classList.add('hidden');
+                    document.getElementById('mfa-section').classList.remove('hidden');
+                    setStatus("");
+                    startTimer(15); // Start the 15 second timer!
+                } else if (data.status === 'success') {
+                    showDashboard();
+                } else {
+                    setStatus(data.message || "Login failed");
+                }
+            } catch (err) {
+                setStatus("Server error. Check your connection.");
             }
         }
 
-        async function doMFA() {
+        async function handleMFA() {
             const code = document.getElementById('mfa-code').value;
-            const res = await fetch(`${API}/verify-mfa`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ code })
-            });
-            if (res.ok) loadDashboard();
-            else document.getElementById('msg').innerText = "Invalid Code";
-        }
+            setStatus("Verifying code...");
 
-        async function loadDashboard() {
-            document.getElementById('auth-box').classList.add('hidden');
-            document.getElementById('stats-box').classList.remove('hidden');
-            document.getElementById('msg').innerText = "";
-            getSteps();
+            try {
+                const response = await fetch(`${API_BASE}/verify-mfa`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    // IMPORTANT FIX: We are now sending BOTH the email and the code
+                    body: JSON.stringify({ email: userEmail, code: code }) 
+                });
+                
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    clearInterval(countdownInterval); // Stop the timer
+                    showDashboard();
+                } else {
+                    // Show exactly what the server says went wrong
+                    setStatus(data.message || data.error || "Invalid code");
+                }
+            } catch (err) {
+                setStatus("Failed to connect to server.");
+            }
         }
 
         async function getSteps() {
-            const res = await fetch(`${API}/steps`);
-            const data = await res.json();
-            document.getElementById('step-display').innerText = data.steps.toLocaleString();
-            document.getElementById('goal-display').innerText = data.goal.toLocaleString();
+            try {
+                const response = await fetch(`${API_BASE}/steps`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('step-count').innerText = data.steps.toLocaleString();
+                    setStatus("Data updated!");
+                    setTimeout(() => setStatus(""), 3000); // Clear success message after 3 seconds
+                } else {
+                    setStatus(data.error || "Failed to load steps");
+                }
+            } catch (err) {
+                setStatus("Could not fetch steps.");
+            }
+        }
+
+        function showDashboard() {
+            document.getElementById('login-section').classList.add('hidden');
+            document.getElementById('mfa-section').classList.add('hidden');
+            document.getElementById('dashboard-section').classList.remove('hidden');
+            setStatus("Loading steps...");
+            getSteps();
+        }
+
+        function startTimer(secondsLeft) {
+            const display = document.getElementById('timer-display');
+            display.innerText = `${secondsLeft}s`;
+            
+            clearInterval(countdownInterval);
+            countdownInterval = setInterval(() => {
+                secondsLeft--;
+                display.innerText = `${secondsLeft}s`;
+                
+                if (secondsLeft <= 0) {
+                    clearInterval(countdownInterval);
+                    display.innerText = "0s";
+                    setStatus("Time's up! The session likely expired. Refresh the page to try again.");
+                }
+            }, 1000);
+        }
+
+        function setStatus(msg) {
+            document.getElementById('status-msg').innerText = msg;
         }
     </script>
 </body>
