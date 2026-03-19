@@ -6,17 +6,18 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// We store the client in a global-ish variable for the serverless session
+// This variable stays in memory as long as the "serverless function" is warm
 let gcClient = null;
 
-// 1. Initial Login Route
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
     try {
+        // We create a fresh client for every login attempt
         gcClient = new GarminConnect({ username: email, password: password });
         await gcClient.login();
         res.json({ status: 'success' });
     } catch (error) {
+        // If MFA is needed, the gcClient object stays "in progress" in memory
         if (error.message.includes('MFA') || error.message.includes('2FA')) {
             res.json({ status: 'mfa_required' });
         } else {
@@ -25,28 +26,34 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// 2. MFA Verification Route
 app.post('/api/verify-mfa', async (req, res) => {
     const { code } = req.body;
     try {
-        if (!gcClient) throw new Error('No active session');
+        // Check if we have a client waiting for a code
+        if (!gcClient) {
+            return res.status(400).json({ error: 'Session expired. Please try logging in again.' });
+        }
+        
+        // Submit the code to the existing client
         await gcClient.provideMFA(code); 
         res.json({ status: 'success' });
     } catch (error) {
-        res.status(400).json({ status: 'error', message: 'MFA failed' });
+        console.error("MFA Error:", error);
+        res.status(400).json({ status: 'error', message: 'Invalid MFA code or session timeout' });
     }
 });
 
-// 3. Get Step Count Route
 app.get('/api/steps', async (req, res) => {
     try {
-        if (!gcClient) return res.status(401).json({ error: 'Please login' });
+        if (!gcClient) return res.status(401).json({ error: 'Not authenticated' });
         const stats = await gcClient.getUserSummary(new Date());
-        res.json({ steps: stats.totalSteps, goal: stats.dailyStepGoal });
+        res.json({ 
+            steps: stats.totalSteps || 0, 
+            goal: stats.dailyStepGoal || 0 
+        });
     } catch (error) {
-        res.status(500).json({ error: 'Data fetch failed' });
+        res.status(500).json({ error: 'Fetch failed' });
     }
 });
 
-// Export the app for Vercel's Serverless environment
 module.exports = app;
