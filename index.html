@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Garmin Steps</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-gray-800 p-8 rounded-2xl shadow-xl text-center">
+        <h1 class="text-2xl font-bold mb-6">Garmin Live Steps</h1>
+        
+        <div id="auth-box" class="space-y-4">
+            <input type="email" id="email" placeholder="Garmin Email" class="w-full p-3 rounded bg-gray-700 border-none">
+            <input type="password" id="password" placeholder="Password" class="w-full p-3 rounded bg-gray-700 border-none">
+            <button onclick="doLogin()" id="btn-login" class="w-full bg-blue-600 py-3 rounded-lg font-bold">Connect Account</button>
+            
+            <div id="mfa-box" class="hidden pt-4 border-t border-gray-700">
+                <p class="text-sm text-gray-400 mb-2">Check your email for a code</p>
+                <input type="text" id="mfa-code" placeholder="000000" class="w-full p-3 rounded bg-gray-700 text-center text-xl">
+                <button onclick="doMFA()" class="w-full mt-3 bg-green-600 py-2 rounded-lg">Verify MFA</button>
+            </div>
+        </div>
+
+        <div id="stats-box" class="hidden space-y-4">
+            <div class="text-6xl font-black text-blue-400" id="step-display">0</div>
+            <p class="text-gray-400 uppercase text-xs tracking-widest">Steps Today</p>
+            <div class="bg-gray-700 p-3 rounded-xl text-sm">
+                Goal: <span id="goal-display">--</span>
+            </div>
+            <button onclick="getSteps()" class="text-blue-500 text-xs hover:underline">Refresh</button>
+        </div>
+        
+        <p id="msg" class="mt-4 text-xs text-red-400"></p>
+    </div>
+
+    <script>
+        // Change this to your Vercel URL once deployed
+        const API = window.location.origin + '/api';
+
+        async function doLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            document.getElementById('msg').innerText = "Logging in...";
+
+            const res = await fetch(`${API}/login`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ email, password })
+            });
+            const data = await res.json();
+
+            if (data.status === 'mfa_required') {
+                document.getElementById('mfa-box').classList.remove('hidden');
+                document.getElementById('msg').innerText = "Enter MFA Code";
+            } else if (data.status === 'success') {
+                loadDashboard();
+            } else {
+                document.getElementById('msg').innerText = data.message;
+            }
+        }
+
+        async function doMFA() {
+            const code = document.getElementById('mfa-code').value;
+            const res = await fetch(`${API}/verify-mfa`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ code })
+            });
+            if (res.ok) loadDashboard();
+            else document.getElementById('msg').innerText = "Invalid Code";
+        }
+
+        async function loadDashboard() {
+            document.getElementById('auth-box').classList.add('hidden');
+            document.getElementById('stats-box').classList.remove('hidden');
+            document.getElementById('msg').innerText = "";
+            getSteps();
+        }
+
+        async function getSteps() {
+            const res = await fetch(`${API}/steps`);
+            const data = await res.json();
+            document.getElementById('step-display').innerText = data.steps.toLocaleString();
+            document.getElementById('goal-display').innerText = data.goal.toLocaleString();
+        }
+    </script>
+</body>
+</html>
