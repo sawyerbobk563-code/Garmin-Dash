@@ -6,25 +6,24 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Use a persistent variable to keep the session alive across requests
-let gcClient = null;
+// We use a simple Map to store active clients by email to help prevent session loss
+const sessions = new Map();
 
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
     try {
-        // Initialize the client
-        gcClient = new GarminConnect({ username: email, password: password });
+        // Create a new client and store it in our map using the email as a key
+        const client = new GarminConnect({ username: email, password: password });
+        sessions.set(email, client);
         
-        // Attempt login - this triggers the MFA email if needed
-        await gcClient.login();
-        
-        // If it gets here, login was successful without MFA
+        await client.login();
         res.json({ status: 'success' });
     } catch (error) {
-        // If MFA is required, the library throws an error containing "MFA"
-        if (error.message.includes('MFA') || error.message.includes('2FA') || error.message.includes('code')) {
-            console.log("MFA status detected for user");
-            res.json({ status: 'mfa_required' });
+        // Check for MFA/2FA requirements
+        if (error.message.toLowerCase().includes('mfa') || 
+            error.message.toLowerCase().includes('2fa') || 
+            error.message.toLowerCase().includes('code')) {
+            res.json({ status: 'mfa_required', email: email });
         } else {
             console.error("Login Error:", error.message);
             res.status(401).json({ status: 'error', message: 'Login failed. Check credentials.' });
@@ -33,38 +32,41 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/verify-mfa', async (req, res) => {
-    const { code } = req.body;
+    const { email, code } = req.body;
     
-    if (!gcClient) {
-        return res.status(400).json({ error: 'Your session timed out. Please go back and login again.' });
+    // Retrieve the client that was created during the initial login step
+    const client = sessions.get(email);
+
+    if (!client) {
+        return res.status(400).json({ 
+            error: 'Session lost. On Vercel, you must enter the code very quickly (within 10-15 seconds) before the server resets.' 
+        });
     }
 
     try {
-        // Clean the code (remove spaces) just in case
         const cleanCode = code.toString().trim();
-        
-        // Submit the code to the active session
-        await gcClient.provideMFA(cleanCode); 
-        
+        await client.provideMFA(cleanCode); 
         res.json({ status: 'success' });
     } catch (error) {
-        console.error("MFA Verification Error:", error.message);
-        // If it fails here, the session might have expired on Garmin's side
-        res.status(400).json({ status: 'error', message: 'Code rejected by Garmin. Try logging in again to get a new code.' });
+        console.error("MFA Error:", error.message);
+        res.status(400).json({ status: 'error', message: 'Garmin rejected the code. It may have expired.' });
     }
 });
 
 app.get('/api/steps', async (req, res) => {
+    // Note: In a serverless environment, this may fail if the function has "restarted"
+    // We try to find any active session in the Map
+    const client = Array.from(sessions.values())[0]; 
+
     try {
-        if (!gcClient) return res.status(401).json({ error: 'Not logged in' });
-        
-        const stats = await gcClient.getUserSummary(new Date());
+        if (!client) return res.status(401).json({ error: 'Not logged in' });
+        const stats = await client.getUserSummary(new Date());
         res.json({ 
             steps: stats.totalSteps || 0, 
             goal: stats.dailyStepGoal || 0 
         });
     } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch steps' });
+        res.status(500).json({ error: 'Session expired. Please login again.' });
     }
 });
 
