@@ -3,129 +3,139 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Garmin Step Tracker</title>
+    <title>My Garmin Steps</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-900 text-white min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-md bg-slate-800 rounded-3xl p-8 shadow-2xl border border-slate-700">
-        <h1 class="text-3xl font-bold text-center mb-8">My <span class="text-blue-500">Steps</span></h1>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center p-6">
 
-        <!-- Step 1: Login Section -->
-        <div id="login-section" class="space-y-4">
-            <input type="email" id="email" placeholder="Garmin Email" class="w-full p-4 rounded-xl bg-slate-700 border-none outline-none focus:ring-2 focus:ring-blue-500">
-            <input type="password" id="password" placeholder="Password" class="w-full p-4 rounded-xl bg-slate-700 border-none outline-none focus:ring-2 focus:ring-blue-500">
-            <button onclick="handleLogin()" class="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold transition">Connect</button>
-        </div>
+    <div class="w-full max-w-md bg-slate-800 rounded-3xl p-8 shadow-xl border border-slate-700">
+        <header class="text-center mb-8">
+            <h1 class="text-2xl font-bold">Garmin Step Tracker</h1>
+            <p id="status-text" class="text-slate-400 text-sm mt-2">Connect your account to see live data</p>
+        </header>
 
-        <!-- Step 2: MFA Section -->
-        <div id="mfa-section" class="hidden space-y-4">
-            <p class="text-center text-slate-400 text-sm">Check your email for the code!</p>
-            
-            <!-- The Countdown Timer -->
-            <div class="bg-red-900/30 border border-red-500/50 rounded-xl p-3 text-center">
-                <p id="timer-display" class="text-red-400 font-bold text-lg">15s</p>
-                <p class="text-xs text-red-300">Enter code before session expires</p>
+        <!-- Form Section -->
+        <div id="auth-section" class="space-y-4">
+            <div id="login-inputs">
+                <input type="email" id="email" placeholder="Email" class="w-full p-3 rounded-lg bg-slate-700 border-none mb-3 focus:ring-2 focus:ring-blue-500">
+                <input type="password" id="password" placeholder="Password" class="w-full p-3 rounded-lg bg-slate-700 border-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="login()" class="w-full mt-4 bg-blue-600 py-3 rounded-lg font-bold hover:bg-blue-500 transition">Login</button>
             </div>
 
-            <input type="text" id="mfa-code" placeholder="6-Digit Code" class="w-full p-4 rounded-xl bg-slate-700 text-center text-2xl tracking-widest outline-none focus:ring-2 focus:ring-green-500">
-            <button onclick="handleMFA()" class="w-full bg-green-600 hover:bg-green-500 py-4 rounded-xl font-bold transition">Verify</button>
+            <div id="mfa-inputs" class="hidden space-y-4">
+                <div class="bg-slate-700/50 border border-slate-600 rounded-xl p-3 text-center">
+                    <p class="text-sm text-slate-300 mb-1">Check your email for the code!</p>
+                    <p id="timer-display" class="text-blue-400 font-bold text-lg">60s</p>
+                </div>
+                <input type="text" id="mfa-code" placeholder="6-digit code" class="w-full p-3 rounded-lg bg-slate-700 border-none text-center text-xl tracking-widest outline-none focus:ring-2 focus:ring-green-500">
+                <button onclick="verifyMFA()" class="w-full mt-4 bg-green-600 py-3 rounded-lg font-bold hover:bg-green-500 transition">Verify Code</button>
+            </div>
         </div>
 
-        <!-- Step 3: Dashboard Section -->
-        <div id="dashboard-section" class="hidden text-center space-y-6 py-10">
-            <div id="step-count" class="text-7xl font-black text-blue-400">0</div>
-            <p class="text-slate-500 uppercase tracking-widest text-xs">Steps Today</p>
-            <button onclick="getSteps()" class="text-blue-500 text-sm hover:underline mt-4">↻ Refresh Data</button>
+        <!-- Data Section -->
+        <div id="data-section" class="hidden text-center space-y-6">
+            <div class="relative inline-flex items-center justify-center">
+                <svg class="w-48 h-48">
+                    <circle cx="96" cy="96" r="88" stroke="currentColor" stroke-width="12" fill="transparent" class="text-slate-700" />
+                    <circle cx="96" cy="96" r="88" stroke="currentColor" stroke-width="12" fill="transparent" class="text-blue-500" stroke-dasharray="552.92" stroke-dashoffset="150" stroke-linecap="round" />
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span id="step-count" class="text-4xl font-black">0</span>
+                    <span class="text-slate-400 text-xs uppercase">Steps Today</span>
+                </div>
+            </div>
+            <div class="bg-slate-700/50 p-4 rounded-2xl">
+                <p class="text-sm text-slate-300">Daily Goal: <span id="step-goal" class="font-bold text-white">--</span></p>
+            </div>
+            <button onclick="fetchSteps()" class="text-blue-400 text-sm hover:text-blue-300">↻ Refresh Data</button>
         </div>
-
-        <p id="status-msg" class="mt-6 text-center text-sm text-yellow-400 font-medium"></p>
     </div>
 
     <script>
-        const API_BASE = window.location.origin + '/api';
+        // Set up the API URL to work perfectly with Render
+        const API_URL = '/api';
         
-        // We need to remember the email to send it with the MFA code
-        let userEmail = ""; 
+        let userEmail = "";
         let countdownInterval;
 
-        async function handleLogin() {
-            userEmail = document.getElementById('email').value;
+        async function login() {
+            const emailInput = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             
-            setStatus("Contacting Garmin...");
+            userEmail = emailInput; // Save email to send with the MFA code
+            updateStatus("Connecting to Garmin...");
 
             try {
-                const response = await fetch(`${API_BASE}/login`, {
+                const response = await fetch(`${API_URL}/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: userEmail, password: password })
+                    body: JSON.stringify({ email: userEmail, password })
                 });
                 const data = await response.json();
-                
+
                 if (data.status === 'mfa_required') {
-                    document.getElementById('login-section').classList.add('hidden');
-                    document.getElementById('mfa-section').classList.remove('hidden');
-                    setStatus("");
-                    startTimer(15); // Start the 15 second timer!
+                    document.getElementById('login-inputs').classList.add('hidden');
+                    document.getElementById('mfa-inputs').classList.remove('hidden');
+                    updateStatus("MFA Required");
+                    startTimer(60); // Start 60-second timer
                 } else if (data.status === 'success') {
                     showDashboard();
                 } else {
-                    setStatus(data.message || "Login failed");
+                    updateStatus(data.message || "Login failed");
                 }
             } catch (err) {
-                setStatus("Server error. Check your connection.");
+                updateStatus("Error connecting to server");
             }
         }
 
-        async function handleMFA() {
+        async function verifyMFA() {
             const code = document.getElementById('mfa-code').value;
-            setStatus("Verifying code...");
+            updateStatus("Verifying...");
 
             try {
-                const response = await fetch(`${API_BASE}/verify-mfa`, {
+                const response = await fetch(`${API_URL}/verify-mfa`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    // IMPORTANT FIX: We are now sending BOTH the email and the code
-                    body: JSON.stringify({ email: userEmail, code: code }) 
+                    // Send BOTH the email and the code to the backend
+                    body: JSON.stringify({ email: userEmail, code })
                 });
                 
                 const data = await response.json();
-
+                
                 if (response.ok && data.status === 'success') {
-                    clearInterval(countdownInterval); // Stop the timer
+                    clearInterval(countdownInterval);
                     showDashboard();
                 } else {
-                    // Show exactly what the server says went wrong
-                    setStatus(data.message || data.error || "Invalid code");
+                    updateStatus(data.message || "Invalid MFA code");
                 }
             } catch (err) {
-                setStatus("Failed to connect to server.");
+                updateStatus("Verification failed.");
             }
         }
 
-        async function getSteps() {
+        async function fetchSteps() {
             try {
-                const response = await fetch(`${API_BASE}/steps`);
+                const response = await fetch(`${API_URL}/steps`);
                 const data = await response.json();
                 
                 if (response.ok) {
                     document.getElementById('step-count').innerText = data.steps.toLocaleString();
-                    setStatus("Data updated!");
-                    setTimeout(() => setStatus(""), 3000); // Clear success message after 3 seconds
+                    document.getElementById('step-goal').innerText = data.goal.toLocaleString();
+                    updateStatus("Live Tracker Connected");
                 } else {
-                    setStatus(data.error || "Failed to load steps");
+                    updateStatus("Could not load steps. Please login again.");
                 }
             } catch (err) {
-                setStatus("Could not fetch steps.");
+                updateStatus("Failed to load steps");
             }
         }
 
         function showDashboard() {
-            document.getElementById('login-section').classList.add('hidden');
-            document.getElementById('mfa-section').classList.add('hidden');
-            document.getElementById('dashboard-section').classList.remove('hidden');
-            setStatus("Loading steps...");
-            getSteps();
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('mfa-inputs').classList.add('hidden');
+            document.getElementById('data-section').classList.remove('hidden');
+            updateStatus("Loading steps...");
+            fetchSteps();
         }
 
         function startTimer(secondsLeft) {
@@ -139,14 +149,14 @@
                 
                 if (secondsLeft <= 0) {
                     clearInterval(countdownInterval);
-                    display.innerText = "0s";
-                    setStatus("Time's up! The session likely expired. Refresh the page to try again.");
+                    display.innerText = "Expired";
+                    updateStatus("Session may have expired. Refresh to try again.");
                 }
             }, 1000);
         }
 
-        function setStatus(msg) {
-            document.getElementById('status-msg').innerText = msg;
+        function updateStatus(msg) {
+            document.getElementById('status-text').innerText = msg;
         }
     </script>
 </body>
